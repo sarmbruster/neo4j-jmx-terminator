@@ -26,6 +26,9 @@ ext {
 
 dependencies {
     compile group: 'org.neo4j', name: 'neo4j-kernel', version: neo4jVersion
+    compile group: 'org.neo4j', name: 'neo4j-jmx', version: neo4jVersion
+//    compile group: 'org.neo4j', name: 'neo4j-management', version: neo4jVersion
+
     //compile group: 'org.neo4j', name: 'neo4j-common', version: neo4jVersion
     //compile group: 'org.neo4j', name: 'neo4j-lucene-index', version: neo4jVersion
     //compile group: 'org.neo4j', name: 'server-api', version: neo4jVersion
@@ -33,7 +36,9 @@ dependencies {
     //compile group: 'org.slf4j', name: 'slf4j-api', version: '1.7.20'
     //compile group: 'org.slf4j', name: 'slf4j-simple', version: '1.7.7'
 
-    testCompile group: 'org.neo4j.test', name: 'neo4j-harness', version: neo4jVersion
+    testCompile group: 'org.neo4j', name: 'neo4j-kernel', version: neo4jVersion, classifier: 'tests'
+    testCompile group: 'org.neo4j', name: 'neo4j-io', version: neo4jVersion, classifier: 'tests'
+    testCompile group: 'junit', name: 'junit', version: '4.12'
     //testCompile group: 'org.neo4j.contrib', name: 'neo4j-spock-extension', version: '0.7.4'
 //    testCompile "org.neo4j.driver:neo4j-java-driver:$neo4jClientVersion"
     //testCompile 'com.ea.agentloader:ea-agent-loader:1.0.0'
