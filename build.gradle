@@ -1,0 +1,54 @@
+plugins {
+    id 'java'
+    //id 'com.github.johnrengelman.shadow' version '1.2.3'
+    id 'idea'
+}
+
+idea {
+    project {
+        ext.jdkName = '1.7'
+        ext.languageLevel = '1.7'
+    }
+}
+
+sourceCompatibility=JavaVersion.VERSION_1_7
+targetCompatibility=JavaVersion.VERSION_1_7
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    neo4jVersion = "2.2.8"
+    //jerseyVersion = "1.19"
+//    neo4jClientVersion = "1.0.0-M04"
+}
+
+dependencies {
+    compile group: 'org.neo4j', name: 'neo4j-kernel', version: neo4jVersion
+    //compile group: 'org.neo4j', name: 'neo4j-common', version: neo4jVersion
+    //compile group: 'org.neo4j', name: 'neo4j-lucene-index', version: neo4jVersion
+    //compile group: 'org.neo4j', name: 'server-api', version: neo4jVersion
+    //compile group: 'org.neo4j.app', name: 'neo4j-server', version: neo4jVersion
+    //compile group: 'org.slf4j', name: 'slf4j-api', version: '1.7.20'
+    //compile group: 'org.slf4j', name: 'slf4j-simple', version: '1.7.7'
+
+    testCompile group: 'org.neo4j.test', name: 'neo4j-harness', version: neo4jVersion
+    //testCompile group: 'org.neo4j.contrib', name: 'neo4j-spock-extension', version: '0.7.4'
+//    testCompile "org.neo4j.driver:neo4j-java-driver:$neo4jClientVersion"
+    //testCompile 'com.ea.agentloader:ea-agent-loader:1.0.0'
+
+    //runtime 'org.glassfish.jersey.media:jersey-media-json-jackson:2.13'
+}
+
+version = "1.0.0-SNAPSHOT"
+group = "org.neo4j.extension.querykiller"
+
+/*shadowJar {
+  dependencies {
+    include(dependency('org.glassfish.jersey.media:jersey-media-json-jackson'))
+    include(dependency('org.javassist:javassist'))
+    include(dependency('com.google.guava:guava'))
+  }
+}*/
+
