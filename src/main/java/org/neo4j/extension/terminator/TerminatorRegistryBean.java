@@ -4,9 +4,15 @@ import org.neo4j.helpers.Service;
 import org.neo4j.jmx.impl.ManagementBeanProvider;
 import org.neo4j.jmx.impl.ManagementData;
 import org.neo4j.jmx.impl.Neo4jMBean;
-import org.neo4j.kernel.extension.KernelExtensions;
+import org.neo4j.kernel.NeoStoreDataSource;
+import org.neo4j.kernel.api.KernelTransaction;
+import org.neo4j.kernel.impl.api.KernelTransactions;
+import org.neo4j.kernel.impl.transaction.state.DataSourceManager;
+import org.neo4j.kernel.lifecycle.LifeSupport;
+import org.neo4j.kernel.lifecycle.Lifecycle;
 
 import javax.management.NotCompliantMBeanException;
+import java.lang.reflect.Field;
 
 /**
  * @author Stefan Armbruster
@@ -25,14 +31,47 @@ public class TerminatorRegistryBean extends ManagementBeanProvider {
 
     private static class TerminatorMBeanImpl extends Neo4jMBean implements TerminatorMBean {
 
+        private final DataSourceManager dataSourceManager;
+        private Field lifeField;
+
         protected TerminatorMBeanImpl(ManagementData management) throws NotCompliantMBeanException {
             super(management);
-            KernelExtensions kernelExtensions = management.resolveDependency(KernelExtensions.class);
+
+            dataSourceManager = management.resolveDependency(DataSourceManager.class);
+            try {
+                lifeField = NeoStoreDataSource.class.getDeclaredField("life");
+                lifeField.setAccessible(true);
+            } catch (NoSuchFieldException e) {
+                throw new RuntimeException(e);
+            }
         }
 
         @Override
         public int getCurrentTransactionCount() {
-            return 0;
+            KernelTransactions kernelTransactions = getKernelTransactions();
+            return kernelTransactions.activeTransactions().size();
+        }
+
+        @Override
+        public void terminateAll() {
+            for (KernelTransaction transaction: getKernelTransactions ().activeTransactions()) {
+                transaction.markForTermination();
+            }
+        }
+
+        private KernelTransactions getKernelTransactions() {
+            NeoStoreDataSource dataSource = dataSourceManager.getDataSource();
+            try {
+                LifeSupport l = (LifeSupport) lifeField.get(dataSource);
+                for (Lifecycle lc : l.getLifecycleInstances()) {
+                    if (lc instanceof KernelTransactions) {
+                        return (KernelTransactions) lc;
+                    }
+                }
+                return null;
+            } catch (IllegalAccessException e) {
+                throw new RuntimeException(e);
+            }
         }
 
         /*@Override

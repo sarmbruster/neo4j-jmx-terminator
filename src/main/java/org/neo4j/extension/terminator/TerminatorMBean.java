@@ -24,9 +24,9 @@ public interface TerminatorMBean {
     void terminate(String id);
 
     @Description("query statistics")
-    Map<String, Map<String, Object>> getStatistics();
+    Map<String, Map<String, Object>> getStatistics();*/
 
-    @Description("clear statistics")
-    void clearStatistics();*/
+    @Description("kill all running transactions")
+    void terminateAll();
 
 }
