@@ -4,7 +4,6 @@ import org.neo4j.jmx.Description;
 import org.neo4j.jmx.ManagementInterface;
 
 import java.util.Collection;
-import java.util.Map;
 
 /**
  * @author Stefan Armbruster
@@ -17,16 +16,13 @@ public interface TerminatorMBean {
     @Description("number of currently running transactions")
     int getCurrentTransactionCount();
 
-    /*@Description("list of currently running queries")
-    Collection<Map<String, Object>> getRunningQueries();
-
-    @Description("terminate a query by id")
-    void terminate(String id);
-
-    @Description("query statistics")
-    Map<String, Map<String, Object>> getStatistics();*/
-
     @Description("kill all running transactions")
     void terminateAll();
+
+    @Description("map with valid transaction ids")
+    Collection<Long> getCurrentTransactionIds();
+
+    @Description("terminate a specific transaction")
+    void terminate(long id);
 
 }

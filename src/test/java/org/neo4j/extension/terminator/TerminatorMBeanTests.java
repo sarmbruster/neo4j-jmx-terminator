@@ -39,11 +39,13 @@ public class TerminatorMBeanTests {
     @Test
     public void shouldTerminateAnEndlessTransaction() throws InterruptedException {
         // given
+        final boolean[] started = {false};
         graphDatabaseService.execute("create (:Person{name:'John'})");
-        Thread thread = new Thread(new Runnable() {
+        Thread workerThread = new Thread(new Runnable() {
             @Override
             public void run() {
                 try (Transaction tx = graphDatabaseService.beginTx()) {
+                    started[0] = true;
                     while (true) {
                         Thread.sleep(5);
                         Node n = graphDatabaseService.findNode(DynamicLabel.label("Person"), "name", "John");
@@ -57,18 +59,23 @@ public class TerminatorMBeanTests {
                 }
             }
         });
-        thread.start();
+        workerThread.start();
+
+        // wait for worker transaction to be started
+        while (started[0]==false) {
+            Thread.sleep(5);
+        }
+
         ObjectName objectName = JmxUtils.getObjectName( graphDatabaseService, "Terminator" );
-        assertTrue(thread.isAlive());
         assertEquals(1, JmxUtils.getAttribute( objectName, "CurrentTransactionCount" ));
 
         // when
         JmxUtils.invoke(objectName, "terminateAll", new Object[0], new String[0] );
+        Thread.sleep(20);
 
         // then
-        Thread.sleep(20);
-        assertFalse(thread.isAlive());
-
+        assertEquals(0, JmxUtils.getAttribute( objectName, "CurrentTransactionCount" ));
+        workerThread.join();
     }
 }
 

@@ -1,5 +1,7 @@
 package org.neo4j.extension.terminator;
 
+import org.apache.commons.configuration.Configuration;
+import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.helpers.Service;
 import org.neo4j.jmx.impl.ManagementBeanProvider;
 import org.neo4j.jmx.impl.ManagementData;
@@ -10,15 +12,27 @@ import org.neo4j.kernel.impl.api.KernelTransactions;
 import org.neo4j.kernel.impl.transaction.state.DataSourceManager;
 import org.neo4j.kernel.lifecycle.LifeSupport;
 import org.neo4j.kernel.lifecycle.Lifecycle;
+import org.neo4j.server.NeoServer;
+import org.neo4j.server.plugins.Injectable;
+import org.neo4j.server.plugins.SPIPluginLifecycle;
+import org.neo4j.server.rest.transactional.TransactionHandle;
+import org.neo4j.server.rest.transactional.TransactionHandleRegistry;
+import org.neo4j.server.rest.transactional.TransactionRegistry;
+import org.neo4j.server.rest.transactional.error.TransactionLifecycleException;
 
 import javax.management.NotCompliantMBeanException;
 import java.lang.reflect.Field;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Map;
 
 /**
  * @author Stefan Armbruster
  */
 @Service.Implementation(ManagementBeanProvider.class)
-public class TerminatorRegistryBean extends ManagementBeanProvider {
+public class TerminatorRegistryBean extends ManagementBeanProvider implements SPIPluginLifecycle {
+
+    public static NeoServer server = null;
 
     public TerminatorRegistryBean() {
         super(TerminatorMBean.class);
@@ -29,21 +43,31 @@ public class TerminatorRegistryBean extends ManagementBeanProvider {
         return new TerminatorMBeanImpl(management);
     }
 
+    @Override
+    public Collection<Injectable<?>> start(NeoServer neoServer) {
+        server = neoServer;
+        return Collections.EMPTY_LIST;
+    }
+
+    @Override
+    public Collection<Injectable<?>> start(GraphDatabaseService graphDatabaseService, Configuration config) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void stop() {
+    }
+
     private static class TerminatorMBeanImpl extends Neo4jMBean implements TerminatorMBean {
 
         private final DataSourceManager dataSourceManager;
+        private Field registryField;
         private Field lifeField;
 
         protected TerminatorMBeanImpl(ManagementData management) throws NotCompliantMBeanException {
             super(management);
-
             dataSourceManager = management.resolveDependency(DataSourceManager.class);
-            try {
-                lifeField = NeoStoreDataSource.class.getDeclaredField("life");
-                lifeField.setAccessible(true);
-            } catch (NoSuchFieldException e) {
-                throw new RuntimeException(e);
-            }
+            unlockPrivateFields();
         }
 
         @Override
@@ -56,6 +80,48 @@ public class TerminatorRegistryBean extends ManagementBeanProvider {
         public void terminateAll() {
             for (KernelTransaction transaction: getKernelTransactions ().activeTransactions()) {
                 transaction.markForTermination();
+            }
+        }
+
+        @Override
+        public Collection<Long> getCurrentTransactionIds() {
+            assertServer();
+            TransactionHandleRegistry transactionRegistry = (TransactionHandleRegistry) server.getTransactionRegistry();
+            try {
+                Map<Long, Object> registry = (Map<Long, Object>) registryField.get(transactionRegistry);
+                return registry.keySet();
+            } catch (IllegalAccessException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        @Override
+        public void terminate(long id) {
+            assertServer();
+            TransactionRegistry transactionRegistry = server.getTransactionRegistry();
+            try {
+                TransactionHandle handle = transactionRegistry.terminate(id);
+                transactionRegistry.release(id, handle);
+            } catch (TransactionLifecycleException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        private void unlockPrivateFields() {
+            try {
+                lifeField = NeoStoreDataSource.class.getDeclaredField("life");
+                lifeField.setAccessible(true);
+
+                registryField = TransactionHandleRegistry.class.getDeclaredField("registry");
+                registryField.setAccessible(true);
+            } catch (NoSuchFieldException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        private void assertServer() {
+            if (server==null) {
+                throw new RuntimeException("found no `server` instance, maybe you've forgotton to register the unmanaged extension?");
             }
         }
 
@@ -73,48 +139,6 @@ public class TerminatorRegistryBean extends ManagementBeanProvider {
                 throw new RuntimeException(e);
             }
         }
-
-        /*@Override
-        public int getRunningQueriesCount() {
-            return queryRegistryExtension.getTransactionEntryMap().size();
-        }
-
-        @Override
-        public Collection<Map<String, Object>> getRunningQueries() {
-            Collection<Map<String,Object>> retVal = new ArrayList<>();
-            for (TransactionEntry entry: queryRegistryExtension.getTransactionEntryMap()) {
-                try {
-                    retVal.add(BeanUtils.describe(entry));
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
-            }
-            return retVal;
-        }
-
-        @Override
-        public void terminate(String id) {
-            queryRegistryExtension.abortQuery(id);
-        }
-
-        @Override
-        public Map<String, Map<String, Object>> getStatistics() {
-            Map<String, Map<String,Object>> retVal = new LinkedHashMap<>();
-
-            for (Map.Entry<String, QueryStat> entry : statisticsExtension.getSortedStatistics().entrySet()) {
-                try {
-                    retVal.put(entry.getKey(), BeanUtils.describe(entry.getValue()));
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
-            }
-            return retVal;
-        }
-
-        @Override
-        public void clearStatistics() {
-            statisticsExtension.clear();
-        }*/
 
     }
 }
