@@ -84,6 +84,7 @@ public class TerminatorMBeanServerTests {
         assertEquals(0, ((Collection)JmxUtils.getAttribute( objectName, "CurrentTransactionIds" )).size());
     }
 
+    // this test requires -Dtx_termination_aware_locks=true
     @Test
     public void testJmxKillWithSaturatedJetty() throws InterruptedException {
         // given
@@ -124,10 +125,7 @@ public class TerminatorMBeanServerTests {
                 t.start();
             }
 
-            // wait until all transactions are started
-            while (transactionIds.size() < threads.size()) {
-                Thread.sleep(5);
-            }
+            Thread.sleep(5_000); // wait - we assume all cypher statements have a query plan built and now waiting for locks
             long started = System.currentTimeMillis();
 
             // when: kill all transaction on tx endpoint
