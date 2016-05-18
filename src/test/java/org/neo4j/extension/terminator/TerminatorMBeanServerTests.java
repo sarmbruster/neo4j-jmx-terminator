@@ -4,8 +4,12 @@ import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
+import org.neo4j.graphdb.DynamicLabel;
+import org.neo4j.graphdb.Node;
+import org.neo4j.graphdb.Transaction;
 import org.neo4j.harness.internal.InProcessServerControls;
 import org.neo4j.harness.junit.Neo4jRule;
+import org.neo4j.helpers.collection.IteratorUtil;
 import org.neo4j.jmx.JmxUtils;
 import org.neo4j.kernel.GraphDatabaseAPI;
 import org.neo4j.server.AbstractNeoServer;
@@ -21,6 +25,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import static java.lang.System.out;
 import static java.util.Arrays.asList;
 import static org.hamcrest.Matchers.greaterThan;
+import static org.hamcrest.Matchers.lessThan;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 import static org.neo4j.helpers.collection.MapUtil.map;
@@ -79,59 +84,69 @@ public class TerminatorMBeanServerTests {
         assertEquals(0, ((Collection)JmxUtils.getAttribute( objectName, "CurrentTransactionIds" )).size());
     }
 
-
-    // expected to fail until kernel checks for transaction terminated while waiting for locks
-    @Ignore
     @Test
     public void testJmxKillWithSaturatedJetty() throws InterruptedException {
         // given
-        graphDatabaseAPI.execute("CREATE (:Person{name: 'John Doe'})");
-        long started = System.currentTimeMillis();
+        graphDatabaseAPI.execute("CREATE (:Person{name: 'John Doe', accessed:0})");
 
-        Collection<Thread> threads = new ConcurrentLinkedQueue<>();
-        final Collection<Long> transactionIds = new ConcurrentLinkedQueue<>();
-        for (int i=0; i < 10; i++) {
-            threads.add(new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    try {
+        try (Transaction longRunningTransaction = graphDatabaseAPI.beginTx()) {
+
+            out.printf("long %d %s started\n", System.currentTimeMillis(), Thread.currentThread().getName());
+
+            // grab a write lock early....
+            Node john = graphDatabaseAPI.findNode(DynamicLabel.label("Person"), "name", "John Doe");
+            longRunningTransaction.acquireWriteLock(john);
+
+
+            // run concurrent transaction on a contended node
+            final Collection<Thread> threads = new ConcurrentLinkedQueue<>();
+            final Collection<Long> transactionIds = new ConcurrentLinkedQueue<>();
+            for (int i = 0; i < 10; i++) {
+                threads.add(new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+
+                        // start a tx via tx cypher endpoint
                         out.printf("%d %s started\n", System.currentTimeMillis(), Thread.currentThread().getName());
-                        HTTP.Response response = HTTP.POST(neo4j.httpURI().toString() + "db/data/transaction", map("statements", asList(map("statement", "MATCH (p:Person{name:'John Doe'}) SET p.accessed = p.accessed+1 RETURN p"))));
+                        HTTP.Response response = HTTP.POST(neo4j.httpURI().toString() + "db/data/transaction", map("statements", Collections.EMPTY_LIST));
                         String location = response.location();
                         String[] parts = location.split("/");
-                        String transactionId = parts[parts.length-1];
+                        String transactionId = parts[parts.length - 1];
                         transactionIds.add(Long.parseLong(transactionId));
 
-                        Thread.sleep(1000);
-
-                        response = HTTP.POST(neo4j.httpURI().toString() + "db/data/transaction/" + transactionId + "/commit", map("statements", Collections.EMPTY_LIST));
+                        // do a contended write -> this one should wait for getting the lock
+                        response = HTTP.POST(neo4j.httpURI().toString() + "db/data/transaction/" + transactionId + "/commit", map("statements", asList(map("statement", "MATCH (p:Person{name:'John Doe'}) SET p.accessed = p.accessed+1 RETURN p"))));
                         out.printf("%d %s finished %d\n", System.currentTimeMillis(), Thread.currentThread().getName(), response.status());
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
                     }
-                }
-            }));
+                }));
+            }
+            for (Thread t : threads) {
+                t.start();
+            }
+
+            // wait until all transactions are started
+            while (transactionIds.size() < threads.size()) {
+                Thread.sleep(5);
+            }
+            long started = System.currentTimeMillis();
+
+            // when: kill all transaction on tx endpoint
+            for (long transactionId : transactionIds) {
+                JmxUtils.invoke(objectName, "terminate", new Object[]{transactionId}, new String[]{"long"});
+            }
+
+            // wait
+            for (Thread t : threads) {
+                t.join();
+            }
+            // then
+            assertThat("took less than 500ms", System.currentTimeMillis() - started, lessThan(500l));
+
+            longRunningTransaction.success();
         }
-        for (Thread t: threads) {
-            t.start();
-        }
 
-        // wait until we have all transactionIds
-        while (transactionIds.size()!=threads.size()) {
-            Thread.sleep(5);
-        }
-
-        // killall
-        JmxUtils.invoke(objectName, "terminateAll", new Object[0], new String[0] );
-
-        // wait
-        for (Thread t: threads) {
-            t.join();
-        }
-
-        assertThat(10_000l, greaterThan(System.currentTimeMillis()-started));
-
-        graphDatabaseAPI.execute("MATCH (p:Person{name:'John Doe'}) RETURN p").writeAsStringTo(new PrintWriter(System.out));
+        long accessed = (long) IteratorUtil.single(graphDatabaseAPI.execute("MATCH (p:Person{name:'John Doe'}) RETURN p.accessed as a").columnAs("a"));
+        assertEquals(0, accessed);
     }
 
 }

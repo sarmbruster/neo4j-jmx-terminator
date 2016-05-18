@@ -14,11 +14,14 @@ sourceCompatibility=JavaVersion.VERSION_1_7
 targetCompatibility=JavaVersion.VERSION_1_7
 
 repositories {
+    mavenLocal()
     mavenCentral()
+
 }
 
 ext {
-    neo4jVersion = "2.2.8"
+    neo4jVersion = "2.2.10-SNAPSHOT"
+//    neo4jVersion = "2.2.8"
     //jerseyVersion = "1.19"
 //    neo4jClientVersion = "1.0.0-M04"
 }
